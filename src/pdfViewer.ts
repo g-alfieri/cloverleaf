@@ -11,6 +11,7 @@ export class PdfViewerPanel {
     public readonly onDidDispose = this._onDidDispose.event;
     private _currentPdfPath: string | undefined;
     private _localResourceRoots: vscode.Uri[];
+    private _isRecreating = false; // Flag to prevent disposal event during recreation
 
     public get currentPdfPath(): string | undefined {
         return this._currentPdfPath;
@@ -58,7 +59,13 @@ export class PdfViewerPanel {
             this._disposables
         );
 
-        panel.onDidDispose(() => this.dispose(), null, this._disposables);
+        panel.onDidDispose(() => {
+            // Only trigger full disposal if we're not recreating the panel
+            if (!this._isRecreating) {
+                this.dispose();
+            }
+        }, null, this._disposables);
+        
         return panel;
     }
 
@@ -79,8 +86,12 @@ export class PdfViewerPanel {
             this._localResourceRoots.push(pdfDir);
             // Dynamic update of localResourceRoots requires panel recreation
             const column = this._panel.viewColumn || vscode.ViewColumn.Two;
+            
+            // Set flag to prevent triggering disposal event
+            this._isRecreating = true;
             this._panel.dispose();
             this._panel = this._createPanel(column);
+            this._isRecreating = false;
         }
         
         const pdfUri = this._panel.webview.asWebviewUri(vscode.Uri.file(pdfPath));
