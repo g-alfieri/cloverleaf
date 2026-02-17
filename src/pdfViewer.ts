@@ -4,7 +4,7 @@ import * as fs from 'fs';
 
 export class PdfViewerPanel {
     private static readonly viewType = 'cloverleafPdfViewer';
-    private readonly _panel: vscode.WebviewPanel;
+    private _panel: vscode.WebviewPanel;
     private readonly _extensionUri: vscode.Uri;
     private _disposables: vscode.Disposable[] = [];
     private _onDidDispose = new vscode.EventEmitter<void>();
