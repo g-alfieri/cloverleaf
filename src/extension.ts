@@ -28,12 +28,14 @@ export function activate(context: vscode.ExtensionContext) {
                 pdfViewer = new PdfViewerPanel(context.extensionUri);
                 pdfViewer.onDidDispose(() => {
                     pdfViewer = undefined;
+                    console.log('PDF viewer disposed');
                 });
             }
 
             pdfViewer.reveal(vscode.ViewColumn.Beside);
             pdfViewer.loadPdf(pdfPath);
 
+            // Always register pdfViewer with syncTexManager
             syncTexManager.setPdfViewer(pdfViewer);
         })
     );
@@ -59,6 +61,8 @@ export function activate(context: vscode.ExtensionContext) {
                         if (pdfViewer) {
                             const pdfPath = editor.document.uri.fsPath.replace(/\.(tex|latex)$/, '.pdf');
                             pdfViewer.reload(pdfPath);
+                            // Re-register after reload in case viewer was recreated
+                            syncTexManager.setPdfViewer(pdfViewer);
                         }
                     } else {
                         vscode.window.showErrorMessage('LaTeX compilation failed. Check output for details.');
@@ -79,9 +83,12 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             if (!pdfViewer) {
-                vscode.window.showErrorMessage('PDF preview not open');
+                vscode.window.showErrorMessage('PDF preview not open. Use "Cloverleaf: Show PDF Preview" first.');
                 return;
             }
+
+            // Ensure pdfViewer is registered (in case it was recreated)
+            syncTexManager.setPdfViewer(pdfViewer);
 
             const position = editor.selection.active;
             const texFile = editor.document.uri.fsPath;
@@ -97,6 +104,8 @@ export function activate(context: vscode.ExtensionContext) {
 
                 if (pdfPosition) {
                     pdfViewer.scrollToPosition(pdfPosition);
+                } else {
+                    vscode.window.showWarningMessage('SyncTeX could not find corresponding PDF location. Ensure the document is compiled with -synctex=1');
                 }
             } catch (error) {
                 vscode.window.showErrorMessage(`SyncTeX error: ${error}`);
@@ -149,6 +158,8 @@ export function activate(context: vscode.ExtensionContext) {
                             if (success && pdfViewer) {
                                 const pdfPath = document.uri.fsPath.replace(/\.(tex|latex)$/, '.pdf');
                                 pdfViewer.reload(pdfPath);
+                                // Re-register after auto-compile reload
+                                syncTexManager.setPdfViewer(pdfViewer);
                             }
                         } catch (error) {
                             console.error('Auto-compile error:', error);
