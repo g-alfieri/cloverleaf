@@ -145,11 +145,11 @@ export class PdfViewerPanel {
             </head>
             <body>
                 <div id="toolbar">
-                    <button class="toolbar-button" id="zoomOut">-</button>
-                    <button class="toolbar-button" id="zoomIn">+</button>
-                    <button class="toolbar-button" id="fitPage">Fit Page</button>
-                    <button class="toolbar-button" id="fitWidth">Fit Width</button>
-                    <button class="toolbar-button" id="darkMode">🌙</button>
+                    <button class="toolbar-button" id="zoomOut" title="Zoom Out">-</button>
+                    <button class="toolbar-button" id="zoomIn" title="Zoom In">+</button>
+                    <button class="toolbar-button" id="fitPage" title="Fit Page">Fit Page</button>
+                    <button class="toolbar-button" id="fitWidth" title="Fit Width">Fit Width</button>
+                    <button class="toolbar-button" id="darkMode" title="Toggle Dark Mode">🌙</button>
                     <span id="pageInfo">Page: <span id="currentPage">0</span> / <span id="totalPages">0</span></span>
                 </div>
                 <div id="pdfContainer"></div>
@@ -157,6 +157,7 @@ export class PdfViewerPanel {
                 <script nonce="${nonce}">
                     const vscode = acquireVsCodeApi();
                     let pdfDoc = null;
+                    let currentPdfUrl = null;
                     let scale = 1.5;
                     const state = vscode.getState() || {};
                     let isDarkMode = state.darkMode !== undefined ? state.darkMode : true;
@@ -166,16 +167,27 @@ export class PdfViewerPanel {
                     function applyDarkMode() {
                         const container = document.getElementById('pdfContainer');
                         const btn = document.getElementById('darkMode');
-                        if (isDarkMode) { container.classList.add('dark-mode'); btn.textContent = '☀️'; }
-                        else { container.classList.remove('dark-mode'); btn.textContent = '🌙'; }
+                        if (isDarkMode) { 
+                            container.classList.add('dark-mode'); 
+                            btn.classList.add('active');
+                            btn.textContent = '☀️'; 
+                        } else { 
+                            container.classList.remove('dark-mode'); 
+                            btn.classList.remove('active');
+                            btn.textContent = '🌙'; 
+                        }
                         vscode.setState({ ...vscode.getState(), darkMode: isDarkMode });
                     }
                     applyDarkMode();
 
                     window.addEventListener('message', async event => {
                         const message = event.data;
-                        if (message.command === 'loadPdf') { loadPdf(message.pdfUrl); }
-                        else if (message.command === 'scrollToPosition') { scrollToPosition(message.page, message.x, message.y); }
+                        if (message.command === 'loadPdf') { 
+                            currentPdfUrl = message.pdfUrl;
+                            loadPdf(message.pdfUrl); 
+                        } else if (message.command === 'scrollToPosition') { 
+                            scrollToPosition(message.page, message.x, message.y); 
+                        }
                     });
 
                     async function loadPdf(url) {
@@ -185,7 +197,9 @@ export class PdfViewerPanel {
                             document.getElementById('pdfContainer').innerHTML = '';
                             for (let i = 1; i <= pdfDoc.numPages; i++) { await renderPage(i); }
                             vscode.postMessage({ command: 'ready' });
-                        } catch (e) { vscode.postMessage({ command: 'error', text: e.message }); }
+                        } catch (e) { 
+                            vscode.postMessage({ command: 'error', text: e.message }); 
+                        }
                     }
 
                     async function renderPage(num) {
@@ -200,6 +214,7 @@ export class PdfViewerPanel {
                         container.appendChild(canvas);
                         document.getElementById('pdfContainer').appendChild(container);
                         await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+                        
                         canvas.addEventListener('click', e => {
                             if ((e.metaKey || e.ctrlKey) && e.shiftKey) {
                                 const rect = canvas.getBoundingClientRect();
@@ -221,16 +236,52 @@ export class PdfViewerPanel {
                             ind.className = 'synctex-indicator';
                             ind.style.left = (x * scale) + 'px';
                             ind.style.top = (y * scale) + 'px';
-                            ind.style.width = '50px'; ind.style.height = '20px';
+                            ind.style.width = '50px'; 
+                            ind.style.height = '20px';
                             el.appendChild(ind);
                             setTimeout(() => ind.remove(), 2000);
                         }
                         document.getElementById('currentPage').textContent = page;
                     }
 
-                    document.getElementById('darkMode').onclick = () => { isDarkMode = !isDarkMode; applyDarkMode(); };
-                    document.getElementById('zoomIn').onclick = () => { scale *= 1.2; loadPdf(pdfDoc._transport.commonObjs.url); };
-                    document.getElementById('zoomOut').onclick = () => { scale /= 1.2; loadPdf(pdfDoc._transport.commonObjs.url); };
+                    async function changeScale(newScale) {
+                        if (!pdfDoc || !currentPdfUrl) return;
+                        scale = newScale;
+                        await loadPdf(currentPdfUrl);
+                    }
+
+                    document.getElementById('darkMode').onclick = () => { 
+                        isDarkMode = !isDarkMode; 
+                        applyDarkMode(); 
+                    };
+                    
+                    document.getElementById('zoomIn').onclick = () => { 
+                        changeScale(scale * 1.2); 
+                    };
+                    
+                    document.getElementById('zoomOut').onclick = () => { 
+                        changeScale(scale / 1.2); 
+                    };
+                    
+                    document.getElementById('fitPage').onclick = async () => {
+                        if (!pdfDoc) return;
+                        const container = document.getElementById('pdfContainer');
+                        const containerHeight = container.clientHeight - 20;
+                        const page = await pdfDoc.getPage(1);
+                        const viewport = page.getViewport({ scale: 1 });
+                        const newScale = containerHeight / viewport.height;
+                        changeScale(newScale);
+                    };
+                    
+                    document.getElementById('fitWidth').onclick = async () => {
+                        if (!pdfDoc) return;
+                        const container = document.getElementById('pdfContainer');
+                        const containerWidth = container.clientWidth - 20;
+                        const page = await pdfDoc.getPage(1);
+                        const viewport = page.getViewport({ scale: 1 });
+                        const newScale = containerWidth / viewport.width;
+                        changeScale(newScale);
+                    };
                 </script>
             </body></html>`;
     }
