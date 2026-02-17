@@ -6,6 +6,34 @@ import { SyncTexManager } from './synctex';
 let pdfViewer: PdfViewerPanel | undefined;
 let latexCompiler: LatexCompiler;
 let syncTexManager: SyncTexManager;
+let lastCompiledFile: string | undefined;
+
+function findLatexEditor(): vscode.TextEditor | undefined {
+    // First check active editor
+    const active = vscode.window.activeTextEditor;
+    if (active && (active.document.languageId === 'latex' || active.document.languageId === 'tex')) {
+        return active;
+    }
+
+    // Then check visible editors
+    for (const editor of vscode.window.visibleTextEditors) {
+        if (editor.document.languageId === 'latex' || editor.document.languageId === 'tex') {
+            return editor;
+        }
+    }
+
+    return undefined;
+}
+
+function findLatexDocument(): string | undefined {
+    // Try to find any open .tex document
+    for (const doc of vscode.workspace.textDocuments) {
+        if ((doc.languageId === 'latex' || doc.languageId === 'tex') && !doc.isUntitled) {
+            return doc.uri.fsPath;
+        }
+    }
+    return undefined;
+}
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Cloverleaf extension is now active!');
@@ -15,14 +43,28 @@ export function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(
         vscode.commands.registerCommand('cloverleaf.showPdfPreview', () => {
-            const editor = vscode.window.activeTextEditor;
-            if (!editor) {
-                vscode.window.showErrorMessage('No active LaTeX document');
+            let texPath: string | undefined;
+
+            // Try to find a LaTeX editor
+            const editor = findLatexEditor();
+            if (editor) {
+                texPath = editor.document.uri.fsPath;
+            } else {
+                // Try to find any LaTeX document
+                texPath = findLatexDocument();
+            }
+
+            // Fallback to last compiled file
+            if (!texPath && lastCompiledFile) {
+                texPath = lastCompiledFile;
+            }
+
+            if (!texPath) {
+                vscode.window.showErrorMessage('No LaTeX document found. Please open a .tex file.');
                 return;
             }
 
-            const texPath = editor.document.uri.fsPath;
-            const pdfPath = texPath.replace(/\.(tex|latex)$/, '.pdf');
+            const pdfPath = texPath.replace(/\.(tex|latex)$/i, '.pdf');
 
             if (!pdfViewer) {
                 pdfViewer = new PdfViewerPanel(context.extensionUri);
@@ -43,10 +85,13 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('cloverleaf.compile', async () => {
             const editor = vscode.window.activeTextEditor;
-            if (!editor) {
+            if (!editor || (editor.document.languageId !== 'latex' && editor.document.languageId !== 'tex')) {
                 vscode.window.showErrorMessage('No active LaTeX document');
                 return;
             }
+
+            const texPath = editor.document.uri.fsPath;
+            lastCompiledFile = texPath;
 
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
@@ -54,12 +99,12 @@ export function activate(context: vscode.ExtensionContext) {
                 cancellable: true
             }, async (progress, token) => {
                 try {
-                    const success = await latexCompiler.compile(editor.document.uri.fsPath, token);
+                    const success = await latexCompiler.compile(texPath, token);
                     if (success) {
                         vscode.window.showInformationMessage('LaTeX compilation successful');
 
                         if (pdfViewer) {
-                            const pdfPath = editor.document.uri.fsPath.replace(/\.(tex|latex)$/, '.pdf');
+                            const pdfPath = texPath.replace(/\.(tex|latex)$/i, '.pdf');
                             pdfViewer.reload(pdfPath);
                             // Re-register after reload in case viewer was recreated
                             syncTexManager.setPdfViewer(pdfViewer);
@@ -77,7 +122,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('cloverleaf.syncTex', async () => {
             const editor = vscode.window.activeTextEditor;
-            if (!editor) {
+            if (!editor || (editor.document.languageId !== 'latex' && editor.document.languageId !== 'tex')) {
                 vscode.window.showErrorMessage('No active LaTeX document');
                 return;
             }
@@ -92,7 +137,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             const position = editor.selection.active;
             const texFile = editor.document.uri.fsPath;
-            const pdfFile = texFile.replace(/\.(tex|latex)$/, '.pdf');
+            const pdfFile = texFile.replace(/\.(tex|latex)$/i, '.pdf');
 
             try {
                 const pdfPosition = await syncTexManager.syncFromSource(
@@ -151,12 +196,13 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.workspace.onDidSaveTextDocument(async (document) => {
                 if (document.languageId === 'latex' || document.languageId === 'tex') {
                     const delay = config.get<number>('autoCompileDelay', 1000);
+                    lastCompiledFile = document.uri.fsPath;
 
                     setTimeout(async () => {
                         try {
                             const success = await latexCompiler.compile(document.uri.fsPath);
                             if (success && pdfViewer) {
-                                const pdfPath = document.uri.fsPath.replace(/\.(tex|latex)$/, '.pdf');
+                                const pdfPath = document.uri.fsPath.replace(/\.(tex|latex)$/i, '.pdf');
                                 pdfViewer.reload(pdfPath);
                                 // Re-register after auto-compile reload
                                 syncTexManager.setPdfViewer(pdfViewer);
