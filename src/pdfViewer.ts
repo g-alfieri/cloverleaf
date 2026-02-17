@@ -10,6 +10,7 @@ export class PdfViewerPanel {
     private _onDidDispose = new vscode.EventEmitter<void>();
     public readonly onDidDispose = this._onDidDispose.event;
     private _currentPdfPath: string | undefined;
+    private _localResourceRoots: vscode.Uri[];
 
     public get currentPdfPath(): string | undefined {
         return this._currentPdfPath;
@@ -17,6 +18,12 @@ export class PdfViewerPanel {
 
     constructor(extensionUri: vscode.Uri) {
         this._extensionUri = extensionUri;
+        
+        // Initialize local resource roots with extension and workspace folders
+        this._localResourceRoots = [
+            this._extensionUri,
+            ...(vscode.workspace.workspaceFolders?.map(folder => folder.uri) || [])
+        ];
 
         this._panel = vscode.window.createWebviewPanel(
             PdfViewerPanel.viewType,
@@ -25,10 +32,7 @@ export class PdfViewerPanel {
             {
                 enableScripts: true,
                 retainContextWhenHidden: true,
-                localResourceRoots: [
-                    this._extensionUri,
-                    ...(vscode.workspace.workspaceFolders?.map(folder => folder.uri) || [])
-                ]
+                localResourceRoots: this._localResourceRoots
             }
         );
 
@@ -67,11 +71,66 @@ export class PdfViewerPanel {
         }
 
         this._currentPdfPath = pdfPath;
+        
+        // Add the PDF's parent directory to localResourceRoots if not already included
+        const pdfDir = vscode.Uri.file(path.dirname(pdfPath));
+        const alreadyIncluded = this._localResourceRoots.some(root => 
+            root.fsPath === pdfDir.fsPath || pdfDir.fsPath.startsWith(root.fsPath)
+        );
+        
+        if (!alreadyIncluded) {
+            this._localResourceRoots.push(pdfDir);
+            // Recreate webview panel with updated localResourceRoots
+            const currentColumn = this._panel.viewColumn;
+            this.dispose();
+            this._recreatePanel(currentColumn);
+        }
+        
         const pdfUri = this._panel.webview.asWebviewUri(vscode.Uri.file(pdfPath));
         this._panel.webview.postMessage({
             command: 'loadPdf',
             pdfUrl: pdfUri.toString()
         });
+    }
+    
+    private _recreatePanel(viewColumn?: vscode.ViewColumn) {
+        this._panel = vscode.window.createWebviewPanel(
+            PdfViewerPanel.viewType,
+            'PDF Preview',
+            viewColumn || vscode.ViewColumn.Two,
+            {
+                enableScripts: true,
+                retainContextWhenHidden: true,
+                localResourceRoots: this._localResourceRoots
+            }
+        );
+
+        this._panel.webview.html = this._getHtmlForWebview(this._panel.webview);
+
+        this._panel.webview.onDidReceiveMessage(
+            message => {
+                switch (message.command) {
+                    case 'syncPdfToTex':
+                        vscode.commands.executeCommand(
+                            'cloverleaf.syncPdf',
+                            message.page,
+                            message.x,
+                            message.y
+                        );
+                        break;
+                    case 'ready':
+                        console.log('PDF viewer ready');
+                        break;
+                    case 'error':
+                        vscode.window.showErrorMessage(`PDF Viewer Error: ${message.text}`);
+                        break;
+                }
+            },
+            null,
+            this._disposables
+        );
+
+        this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
     }
 
     public reload(pdfPath: string) {
