@@ -25,7 +25,10 @@ export class PdfViewerPanel {
             {
                 enableScripts: true,
                 retainContextWhenHidden: true,
-                localResourceRoots: undefined // Allow all local resources
+                localResourceRoots: [
+                    this._extensionUri,
+                    ...(vscode.workspace.workspaceFolders?.map(folder => folder.uri) || [])
+                ]
             }
         );
 
