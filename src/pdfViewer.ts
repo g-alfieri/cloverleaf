@@ -191,6 +191,9 @@ export class PdfViewerPanel {
                         text-align: center;
                         background-color: #525659;
                     }
+                    #pdfContainer.dark-mode {
+                        background-color: #1e1e1e;
+                    }
                     #toolbar {
                         position: absolute;
                         top: 0;
@@ -215,10 +218,20 @@ export class PdfViewerPanel {
                     .toolbar-button:hover {
                         background: var(--vscode-button-hoverBackground);
                     }
+                    .toolbar-button.active {
+                        background: var(--vscode-button-secondaryBackground);
+                        border: 1px solid var(--vscode-button-border);
+                    }
                     .page {
                         margin: 10px auto;
                         box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
                         position: relative;
+                    }
+                    .page canvas {
+                        transition: filter 0.3s ease;
+                    }
+                    .dark-mode .page canvas {
+                        filter: invert(0.9) hue-rotate(180deg);
                     }
                     .synctex-indicator {
                         position: absolute;
@@ -245,6 +258,7 @@ export class PdfViewerPanel {
                     <button class="toolbar-button" id="zoomIn">+</button>
                     <button class="toolbar-button" id="fitPage">Fit Page</button>
                     <button class="toolbar-button" id="fitWidth">Fit Width</button>
+                    <button class="toolbar-button" id="darkMode" title="Toggle Dark Mode">🌙</button>
                     <span id="pageInfo">Page: <span id="currentPage">0</span> / <span id="totalPages">0</span></span>
                 </div>
                 <div id="pdfContainer"></div>
@@ -255,8 +269,34 @@ export class PdfViewerPanel {
                     let pdfDoc = null;
                     let scale = 1.5;
                     let currentPage = 1;
+                    
+                    // Load dark mode preference or default to true
+                    const state = vscode.getState() || {};
+                    let isDarkMode = state.darkMode !== undefined ? state.darkMode : true;
 
                     pdfjsLib.GlobalWorkerOptions.workerSrc = '${pdfjsWorker}';
+
+                    // Apply dark mode on load
+                    function applyDarkMode() {
+                        const container = document.getElementById('pdfContainer');
+                        const darkModeBtn = document.getElementById('darkMode');
+                        
+                        if (isDarkMode) {
+                            container.classList.add('dark-mode');
+                            darkModeBtn.classList.add('active');
+                            darkModeBtn.textContent = '☀️';
+                        } else {
+                            container.classList.remove('dark-mode');
+                            darkModeBtn.classList.remove('active');
+                            darkModeBtn.textContent = '🌙';
+                        }
+                        
+                        // Save state
+                        vscode.setState({ ...state, darkMode: isDarkMode });
+                    }
+
+                    // Apply on load
+                    applyDarkMode();
 
                     window.addEventListener('message', async event => {
                         const message = event.data;
@@ -355,6 +395,12 @@ export class PdfViewerPanel {
                             }
                         }
                     }
+
+                    // Dark mode toggle
+                    document.getElementById('darkMode').addEventListener('click', () => {
+                        isDarkMode = !isDarkMode;
+                        applyDarkMode();
+                    });
 
                     document.getElementById('zoomIn').addEventListener('click', () => {
                         changeScale(scale * 1.2);
